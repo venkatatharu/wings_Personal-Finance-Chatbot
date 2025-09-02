@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClauseWise Chat — Frontend</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--bubble-user:#0ea5a4;--bubble-assistant:#14213d}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;min-height:100vh;background:linear-gradient(180deg,#061028 0%,var(--bg) 100%);color:#e6eef6;display:flex;align-items:center;justify-content:center;padding:28px}
+    .app{width:100%;max-width:900px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:18px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    header{display:flex;gap:12px;align-items:center}
+    .logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .title{font-size:18px;font-weight:700}
+    .subtitle{font-size:13px;color:var(--muted);margin-top:2px}
+    .main{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-top:16px}
+
+    /* chat column */
+    .chat-card{background:var(--card);border-radius:10px;padding:12px;display:flex;flex-direction:column;height:520px}
+    .messages{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:10px}
+    .msg{max-width:78%;padding:10px 12px;border-radius:12px;line-height:1.4;word-wrap:break-word}
+    .msg.user{margin-left:auto;background:linear-gradient(180deg,var(--bubble-user),#059487);color:white;border-bottom-right-radius:4px}
+    .msg.assistant{margin-right:auto;background:rgba(255,255,255,0.03);color:var(--muted);border-bottom-left-radius:4px}
+
+    .input-row{display:flex;gap:8px;margin-top:12px}
+    textarea{resize:none;flex:1;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit;font-size:14px;min-height:56px}
+    button{background:var(--accent);border:none;padding:0 16px;border-radius:10px;color:#04111a;font-weight:600;cursor:pointer}
+    button[disabled]{opacity:0.6;cursor:default}
+
+    /* sidebar */
+    .sidebar{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));border-radius:10px;padding:12px;height:520px;display:flex;flex-direction:column}
+    .section{margin-bottom:12px}
+    .section h4{margin:0 0 8px 0;font-size:13px;color:var(--muted)}
+    .examples{display:flex;flex-direction:column;gap:8px}
+    .ex{background:transparent;border:1px solid rgba(255,255,255,0.02);padding:8px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px}
+    .small{font-size:12px;color:var(--muted)}
+    .status{font-size:13px;color:var(--muted);margin-top:auto}
+
+    /* responsive */
+    @media (max-width:920px){.main{grid-template-columns:1fr}.sidebar{display:none;height:auto}}
+  </style>
+</head>
+<body>
+  <div class="app" role="application">
+    <header>
+      <div class="logo">CW</div>
+      <div>
+        <div class="title">ClauseWise Chat</div>
+        <div class="subtitle">Concise financial advice on savings, taxes, and investments</div>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="chat-card">
+        <div class="messages" id="messages" aria-live="polite"></div>
+
+        <div class="input-row">
+          <textarea id="input" placeholder="Ask something like: How much emergency fund do I need?" aria-label="Message input"></textarea>
+          <button id="send">Send</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;align-items:center">
+          <div class="small">Press Enter to send. Shift+Enter for newline.</div>
+          <div id="typing" class="small" style="visibility:hidden">Assistant is typing...</div>
+        </div>
+      </div>
+
+      <aside class="sidebar">
+        <div class="section">
+          <h4>Quick Examples</h4>
+          <div class="examples">
+            <button class="ex">How much emergency fund do I need</button>
+            <button class="ex">Best way to start investing 1000</button>
+            <button class="ex">How to reduce tax burden</button>
+            <button class="ex">Pay debt first or invest</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h4>Connection</h4>
+          <div class="small">Backend endpoint:</div>
+          <div class="small" id="endpoint">http://localhost:8000/chat</div>
+          <div class="small" style="margin-top:6px">Make sure your backend allows CORS for this origin.</div>
+        </div>
+
+        <div class="section">
+          <h4>About</h4>
+          <div class="small">This frontend posts messages to the backend API and displays replies. For production, secure the API with authentication and HTTPS.</div>
+        </div>
+
+        <div class="status">Ready</div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    /*
+      Simple frontend to call a backend POST /chat
+      Expected request body: { message: string, history: array }
+      Expected response: { response: string }
+
+      NOTE: Backend must enable CORS and accept JSON requests. If you used FastAPI, enable CORS middleware.
+    */
+
+    const endpoint = document.getElementById('endpoint').innerText.trim();
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const typingEl = document.getElementById('typing');
+
+    let history = [];
+
+    function appendMessage(role, text){
+      const div = document.createElement('div');
+      div.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
+      div.innerText = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage(){
+      const text = inputEl.value.trim();
+      if(!text) return;
+      appendMessage('user', text);
+      history.push({role:'user', text});
+      inputEl.value = '';
+
+      typingEl.style.visibility = 'visible';
+      sendBtn.disabled = true;
+
+      try{
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, history })
+        });
+
+        if(!res.ok){
+          const err = await res.text();
+          appendMessage('assistant', 'Error from server: ' + err);
+        } else {
+          const data = await res.json();
+          const reply = data.response || 'No response from server';
+          appendMessage('assistant', reply);
+          history.push({role:'assistant', text: reply});
+        }
+      } catch (e) {
+        appendMessage('assistant', 'Network error: ' + e.message);
+      } finally {
+        typingEl.style.visibility = 'hidden';
+        sendBtn.disabled = false;
+      }
+    }
+
+    // handle enter key: Enter to send, Shift+Enter newline
+    inputEl.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && !e.shiftKey){
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    sendBtn.addEventListener('click', sendMessage);
+
+    // example buttons fill input
+    document.querySelectorAll('.ex').forEach(btn => {
+      btn.addEventListener('click', () => {
+        inputEl.value = btn.innerText;
+        inputEl.focus();
+      })
+    });
+
+    // small helper: initialize with a welcome message from assistant
+    appendMessage('assistant', 'Hello, I am ClauseWise. Ask me about savings, taxes, or investments.');
+    history.push({role:'assistant', text:'Hello, I am ClauseWise. Ask me about savings, taxes, or investments.'});
+  </script>
+</body>
+</html>
